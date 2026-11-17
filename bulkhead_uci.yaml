@@ -1,0 +1,62 @@
+# bulkhead_uci.yaml
+# Aislamiento de recursos mediante PriorityClass y cgroups v2 en Kubernetes (Paso 2.4)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: uci-critica
+value: 1000000
+globalDefault: false
+description: "Prioridad máxima para alertas vitales de la UCI de HospitValle"
+---
+# Compartimento 1: Alertas críticas UCI -> QoS Guaranteed (requests == limits)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertas-uci
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: alertas-uci
+  template:
+    metadata:
+      labels:
+        app: alertas-uci
+    spec:
+      priorityClassName: uci-critica
+      containers:
+        - name: alertas-uci
+          image: hospitvalle/alertas-uci:1.0
+          resources:
+            requests:
+              cpu: "2"
+              memory: "1Gi"
+            limits:
+              cpu: "2"          # Configura cgroup cpu.max = "200000 100000" (2.0 vCPU fijas)
+              memory: "1Gi"
+---
+# Compartimento 2: Telemetría regular -> QoS Burstable (techo 1.5 vCPU)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemetria-regular
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telemetria-regular
+  template:
+    metadata:
+      labels:
+        app: telemetria-regular
+    spec:
+      containers:
+        - name: telemetria-regular
+          image: hospitvalle/telemetria:1.0
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1500m"      # Configura cgroup cpu.max = "150000 100000" (1.5 vCPU máx)
+              memory: "1Gi"
